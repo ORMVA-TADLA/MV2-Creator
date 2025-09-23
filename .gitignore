@@ -7,3 +7,9 @@ __pycache__/
 
 # Ignore .venv directories
 .venv/
+
+# Ignore build directories
+build/
+
+# Ignore .spec files
+*.spec
