@@ -1,0 +1,9 @@
+# Ignore xls and xlsx files
+*.xls
+*.xlsx
+
+# Ignore __pycache__ directories
+__pycache__/
+
+# Ignore .venv directories
+.venv/
