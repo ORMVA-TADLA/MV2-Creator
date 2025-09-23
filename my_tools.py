@@ -71,7 +71,50 @@ def sum_chunks(data_list, chunk_sizes):
     return result_list
 
 
-def xls_to_dict(original_path):
+def TRD_date_range(original_path):
+
+    # Load the entire workbook
+    workbook = load_workbook(original_path)
+
+    # Select the active sheet
+    sheet = workbook.active
+
+    # Initialize variables
+    TRD_start_hour = None
+    TRD_end_hour = None
+
+    # Iterate over rows to find the earliest TRD_start
+    for row in sheet.iter_rows(
+        min_row=2, max_row=10, max_col=11, min_col=10, values_only=True
+    ):
+        if row[0] is None:
+            continue
+        date = extract_date(row[0], row[1])
+        if TRD_start_hour is None:
+            TRD_start_hour = date
+            continue
+        if date < TRD_start_hour:
+            TRD_start_hour = date
+
+    # Iterate over rows to get the latest TRD hour
+    for row in sheet.iter_rows(min_row=2, values_only=True):
+        duration = row[11]
+        if duration == 0:
+            continue
+        date_open = None
+        if row[9] is not None:
+            date_open = extract_date(row[9], row[10])
+        if date_open is None:
+            continue
+        if TRD_end_hour is None:
+            TRD_end_hour = date_open + timedelta(hours=duration)
+        if date_open + timedelta(hours=duration) > TRD_end_hour:
+            TRD_end_hour = date_open + timedelta(hours=duration)
+
+    return TRD_start_hour, TRD_end_hour
+
+
+def xls_to_dict(original_path, TRD_start_hour, TRD_end_hour, mv2_type="ALL"):
     """
     Reads an Excel file and converts its data into a structured dictionary.
 
@@ -83,53 +126,40 @@ def xls_to_dict(original_path):
     """
     # Load the entire workbook
     workbook = load_workbook(original_path)
-    print("DEBUG: Workbook loaded successfully.")
 
     # Select the active sheet
     sheet = workbook.active
 
     # Initialize variables
     mv2 = {}
-    TRD_start = None
-    TRD_end = None
-
-    # Iterate over rows to find the earliest TRD_start
-    for row in sheet.iter_rows(
-        min_row=2, max_row=10, max_col=11, min_col=10, values_only=True
-    ):
-        if row[0] is None:
-            continue
-        date = extract_date(row[0], row[1])
-        if TRD_start is None:
-            TRD_start = date
-            continue
-        if date < TRD_start:
-            TRD_start = date
 
     # Iterate over rows to process data
     for row in sheet.iter_rows(min_row=2, values_only=True):
-        ter = extract_ter(row[2])
-        sec = extract_sec(row[2])
-        debit = row[3]
+        record_type = row[4]
+        if mv2_type != "ALL" and record_type != mv2_type:
+            continue
         duration = row[11]
         if duration == 0:
             continue
+        ter = extract_ter(row[2])
+        sec = extract_sec(row[2])
+        debit = row[3]
         date_open = None
         if row[9] is not None:
             date_open = extract_date(row[9], row[10])
         if date_open is None:
             continue
-        if TRD_end is None:
-            TRD_end = date_open + timedelta(hours=duration)
-        if date_open + timedelta(hours=duration) > TRD_end:
-            TRD_end = date_open + timedelta(hours=duration)
+        if TRD_end_hour is None:
+            TRD_end_hour = date_open + timedelta(hours=duration)
+        if date_open + timedelta(hours=duration) > TRD_end_hour:
+            TRD_end_hour = date_open + timedelta(hours=duration)
         if sec not in mv2:
             mv2[sec] = {}
         if ter not in mv2[sec]:
             mv2[sec][ter] = {"hours_list": [],
                              "hours_list_summed": [], "total_hours": 0}
 
-        date_diff = calculate_hours_difference(TRD_start, date_open)
+        date_diff = calculate_hours_difference(TRD_start_hour, date_open)
         for i in range(duration):
             hour_index = int(date_diff + i)
             if hour_index >= len(mv2[sec][ter]["hours_list"]):
@@ -163,10 +193,10 @@ def xls_to_dict(original_path):
             mv2[sec][ter]["total_hours"] = sum(
                 mv2[sec][ter]["hours_list"]) / 20
 
-    return mv2, TRD_start, TRD_end
+    return mv2
 
 
-def create_mv2(mv2, TRD_start, TRD_end, directory):
+def create_mv2(mv2, TRD_start_hour, TRD_end_hour, directory, mv2_type):
     """
     Creates a new Excel file (MV2) from the processed data.
 
@@ -179,8 +209,7 @@ def create_mv2(mv2, TRD_start, TRD_end, directory):
         str: The full path of the created Excel file.
     """
     # Calculate the number of days in the TRD period
-    TRD_days = (TRD_end - TRD_start).days
-    print(f"DEBUG: TRD_days calculated as {TRD_days}")
+    TRD_days = (TRD_end_hour - TRD_start_hour).days
 
     # Create a new workbook
     workbook = Workbook()
@@ -301,24 +330,58 @@ def create_mv2(mv2, TRD_start, TRD_end, directory):
     sheet["B" + str(sheet.max_row)].alignment = Alignment(horizontal="left")
 
     # Save the workbook to a file
-    excel_file_name = f"MV2 - {TRD_start.strftime('%Y-%m-%d')}.xlsx"
+    excel_file_name = f"MV2 - {TRD_start_hour.strftime('%Y-%m-%d')} - {TRD_end_hour.strftime('%Y-%m-%d')} - {mv2_type} - {grand_total_hours[0]}H.xlsx"
     excel_full_path = os.path.join(directory, excel_file_name)
     workbook.save(excel_full_path)
     return excel_full_path
 
 
+def get_mv2_types(xl_file_path):
+    # extract types from excel file
+    workbook = load_workbook(xl_file_path)
+    sheet = workbook.active
+    types_in_file = set()
+
+    # loop over cells in column E
+    for cell in sheet['E']:
+        record_type = cell.value
+        if cell.row == 1:
+            continue
+        if record_type:
+            types_in_file.add(record_type)
+
+    return list(types_in_file)
+
+
 # if script is run directly
 if __name__ == "__main__":
     # Example usage
-    original_path = "mv1.xlsx"
-    mv2, TRD_start, TRD_end = xls_to_dict(original_path)
-    print(f"TRD_start: {TRD_start}, TRD_end: {TRD_end}")
-    print("Data processed successfully.")
-    # save mv2 to json for debugging
-    import json
-    with open("mv2_debug.json", "w") as f:
-        json.dump(mv2, f, indent=4)
-        print("New MV2 data saved to mv2_debug.json for debugging.")
-    directory = os.path.dirname(original_path)
-    new_file_path = create_mv2(mv2, TRD_start, TRD_end, directory)
-    print(f"New MV2 file created at: {new_file_path}")
+    xl_file_path = "MV1 G8-G10 2025-09-15 v6.xlsx"
+
+    # Get TRD date range
+    TRD_start_hour, TRD_end_hour = TRD_date_range(xl_file_path)
+    print(f"TRD start hour: {TRD_start_hour}, TRD end hour: {TRD_end_hour}")
+
+    types = get_mv2_types(xl_file_path) + ["ALL"]
+    print(f"MV2 types to process: {types}")
+
+    for mv2_type in types:
+        print(f"Processing type: {mv2_type}")
+        # Process the Excel file to get the mv2 dictionary
+        mv2 = xls_to_dict(xl_file_path, TRD_start_hour,
+                          TRD_end_hour, mv2_type)
+        print("Data processed successfully for type:", mv2_type)
+
+        # save mv2 to json for debugging
+        import json
+        with open(f"mv2_debug - {mv2_type}.json", "w") as f:
+            json.dump(mv2, f, indent=4)
+            print("New MV2 data saved to mv2_debug.json for debugging.")
+
+        # Create a new MV2 Excel file
+        directory = os.path.dirname(xl_file_path)
+        new_file_path = create_mv2(
+            mv2, TRD_start_hour, TRD_end_hour, directory, mv2_type)
+        print(f"New MV2 file created at: {new_file_path}")
+
+    # todo: auto cllect mv2 types from mv1 and loop through them

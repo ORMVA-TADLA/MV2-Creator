@@ -4,7 +4,7 @@ from tkinter import filedialog
 import os
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
-from my_tools import create_mv2, xls_to_dict
+from my_tools import create_mv2, xls_to_dict, TRD_date_range, get_mv2_types
 
 
 def browse_file():
@@ -22,20 +22,37 @@ def create():
     Processes the selected Excel file to create a new MV2 file.
     Handles errors and displays the status to the user.
     """
-    original_path = file_path_var.get()
-    if not original_path:
+    xl_file_path = file_path_var.get()
+    if not xl_file_path:
         status_label.config(
             text="Please select a file first.", bootstyle="danger")
         return
 
     try:
-        # Convert the selected Excel file to a dictionary
-        mv2, TRD_start = xls_to_dict(original_path)
-        directory = os.path.dirname(original_path)
-        # Create the new MV2 Excel file
-        created_file = create_mv2(mv2, TRD_start, directory)
+
+        # Get TRD date range
+        TRD_start_hour, TRD_end_hour = TRD_date_range(xl_file_path)
+        print(
+            f"TRD start hour: {TRD_start_hour}, TRD end hour: {TRD_end_hour}")
+
+        types = get_mv2_types(xl_file_path) + ["ALL"]
+        print(f"MV2 types to process: {types}")
+
+        for mv2_type in types:
+            print(f"Processing type: {mv2_type}")
+            # Process the Excel file to get the mv2 dictionary
+            mv2 = xls_to_dict(xl_file_path, TRD_start_hour,
+                              TRD_end_hour, mv2_type)
+            print("Data processed successfully for type:", mv2_type)
+
+            # Create a new MV2 Excel file
+            directory = os.path.dirname(xl_file_path)
+            new_file_path = create_mv2(
+                mv2, TRD_start_hour, TRD_end_hour, directory, mv2_type)
+            print(f"New MV2 file created at: {new_file_path}")
+
         status_label.config(
-            text=f"Successfully created: {created_file}", bootstyle="success"
+            text=f"Successfully creating MV2 files for {len(types)} types.", bootstyle="success"
         )
 
     except Exception as e:
