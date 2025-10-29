@@ -85,7 +85,7 @@ def TRD_date_range(original_path):
 
     # Iterate over rows to find the earliest TRD_start
     for row in sheet.iter_rows(
-        min_row=2, max_row=10, max_col=11, min_col=10, values_only=True
+        min_row=2, max_col=11, min_col=10, values_only=True
     ):
         if row[0] is None:
             continue
@@ -356,7 +356,7 @@ def get_mv2_types(xl_file_path):
 # if script is run directly
 if __name__ == "__main__":
     # Example usage
-    xl_file_path = "MV1 G8-G10 2025-09-15 v6.xlsx"
+    xl_file_path = "MV1 G8-G10 2025-10-29.xlsx"
 
     # Get TRD date range
     TRD_start_hour, TRD_end_hour = TRD_date_range(xl_file_path)
